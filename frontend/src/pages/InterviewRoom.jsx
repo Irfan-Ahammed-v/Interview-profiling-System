@@ -160,6 +160,7 @@ export default function InterviewRoom({ userData }) {
     Communication: '0%',
     Posture_Score: '0%',
   });
+  
   const [anxietyAlert, setAnxietyAlert]       = useState('');
   const [isConnected, setIsConnected]         = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -167,19 +168,26 @@ export default function InterviewRoom({ userData }) {
   const [frameCount, setFrameCount]           = useState(0);
   const [camReady, setCamReady]               = useState(false);
 
+  // New Voice States
+  const [transcript, setTranscript] = useState('');
+  const [totalWordCount, setTotalWordCount] = useState(0);
+  const [currentWpm, setCurrentWpm] = useState(0);
+
   const [sessionTotals, setSessionTotals] = useState({
-    confidence: [], honesty: [], communication: [], stress: [], posture: [],
+    confidence: [], honesty: [], communication: [], stress: [], posture: [], wpm: []
   });
 
   const videoRef  = useRef(null);
   const streamRef = useRef(null);
   const canvasRef = useRef(document.createElement('canvas'));
+  const wsRef     = useRef(null);
+  const recognitionRef = useRef(null);
 
   /* ── Camera ── */
   useEffect(() => {
     async function setupCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.onloadedmetadata = () => {
@@ -190,7 +198,7 @@ export default function InterviewRoom({ userData }) {
         }
         streamRef.current = stream;
       } catch (err) {
-        console.warn('Camera access denied:', err);
+        console.warn('Camera/Audio access denied:', err);
       }
     }
     setupCamera();
@@ -200,6 +208,7 @@ export default function InterviewRoom({ userData }) {
   /* ── WebSocket ── */
   useEffect(() => {
     const ws = new WebSocket('ws://localhost:8000/ws/interview');
+    wsRef.current = ws;
 
     ws.onopen = () => {
       setIsConnected(true);
@@ -226,6 +235,7 @@ export default function InterviewRoom({ userData }) {
             communication: [...prev.communication, parseInt(data.metrics.Communication)],
             stress:        [...prev.stress,        data.metrics.Stress_Level],
             posture:       [...prev.posture,       parseInt(data.metrics.Posture_Score)],
+            wpm:           [...prev.wpm,           currentWpm]
           }));
         }
         if (data.anxiety_flag) {
@@ -239,7 +249,52 @@ export default function InterviewRoom({ userData }) {
 
     ws.onclose = () => setIsConnected(false);
     return () => ws.close();
-  }, []);
+  }, [currentWpm]);
+
+  /* ── Speech Recognition ── */
+  useEffect(() => {
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRec) {
+      const rec = new SpeechRec();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = 'en-US';
+
+      rec.onresult = (event) => {
+        let currentTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          currentTranscript += event.results[i][0].transcript;
+        }
+        setTranscript(currentTranscript);
+        
+        // Calculate WPM
+        const words = currentTranscript.trim().split(/\s+/).length;
+        setTotalWordCount(words);
+        const minutes = sessionSeconds / 60;
+        if (minutes > 0) {
+          const wpm = Math.round(words / minutes);
+          setCurrentWpm(wpm);
+          
+          // Send to backend
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+             wsRef.current.send(JSON.stringify({ 
+                type: 'text', 
+                transcript: currentTranscript, 
+                wpm: wpm 
+             }));
+          }
+        }
+      };
+
+      rec.onerror = (err) => console.warn('Speech Rec Error:', err);
+      rec.onend = () => rec.start(); // Keep listening
+
+      rec.start();
+      recognitionRef.current = rec;
+    }
+
+    return () => recognitionRef.current?.stop();
+  }, [sessionSeconds]);
 
   /* ── Session timer ── */
   useEffect(() => {
@@ -275,29 +330,27 @@ export default function InterviewRoom({ userData }) {
             avgHonesty:       avg(sessionTotals.honesty),
             avgCommunication: avg(sessionTotals.communication),
             avgPosture:       avg(sessionTotals.posture),
+            avgWpm:           avg(sessionTotals.wpm),
             overallStress:    dominantStress,
+            fullTranscript:   transcript
           },
         },
       });
     }
-  }, [currentQuestionIndex, sessionTotals, navigate, userData]);
+  }, [currentQuestionIndex, sessionTotals, navigate, userData, transcript]);
 
   const stressCfg = STRESS_CONFIG[metrics.Stress_Level] || STRESS_CONFIG.Low;
 
-  /* ── Render ── */
   return (
     <div className="min-h-screen bg-[#0a0c10] text-[#e8eaf0] font-sans flex flex-col p-3.5 gap-3.5 select-none">
 
-      {/* ── Header ── */}
+      {/* Header */}
       <header className="flex items-center justify-between px-1">
-        {/* Logo */}
         <div className="flex items-center gap-2.5">
           <div className="w-[34px] h-[34px] bg-[#4f6ef7] rounded-[9px] flex items-center justify-center flex-shrink-0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+             <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
               <path d="M12 2a6 6 0 0 1 0 12A6 6 0 0 1 12 2z" />
               <path d="M12 14c-5 0-9 2.2-9 5v1h18v-1c0-2.8-4-5-9-5z" />
-              <circle cx="8" cy="8" r="1" fill="#fff" stroke="none" />
-              <circle cx="16" cy="8" r="1" fill="#fff" stroke="none" />
             </svg>
           </div>
           <div>
@@ -310,196 +363,89 @@ export default function InterviewRoom({ userData }) {
           </div>
         </div>
 
-        {/* Controls */}
         <div className="flex items-center gap-2.5">
           <div className="font-mono text-[11px] text-[#6b7280] px-3 py-1.5 bg-[#161920] border border-white/5 rounded-full">
-            Q{currentQuestionIndex + 1} / {QUESTIONS.length}
+            {currentWpm} WPM
           </div>
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#161920] border border-white/5 rounded-full text-[11px] font-medium text-[#6b7280]">
-            <span
-              className="w-1.5 h-1.5 rounded-full"
-              style={{
-                background: isConnected ? '#34d399' : '#f87171',
-                boxShadow: isConnected ? '0 0 0 3px rgba(52,211,153,0.15)' : undefined,
-              }}
-            />
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: isConnected ? '#34d399' : '#f87171' }} />
             {isConnected ? 'Engine synced' : 'Disconnected'}
           </div>
-          <button
-            onClick={() => navigate('/')}
-            className="px-3.5 py-1.5 text-[12px] font-medium bg-[#161920] border border-white/10 rounded-full text-[#6b7280] hover:text-[#e8eaf0] hover:border-white/20 transition-all duration-200"
-          >
+          <button onClick={() => navigate('/')} className="px-3.5 py-1.5 text-[12px] font-medium bg-[#161920] border border-white/10 rounded-full text-[#6b7280] hover:text-[#e8eaf0] transition-all">
             End session
           </button>
         </div>
       </header>
 
-      {/* ── Main grid ── */}
+      {/* Main grid */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3.5 overflow-hidden">
-
-        {/* Left column */}
+        
         <div className="grid grid-rows-[auto_1fr] gap-3.5 overflow-hidden">
-
+          
           {/* Question panel */}
           <div className="relative bg-[#10131a] border border-white/5 rounded-2xl px-6 py-5 flex flex-col gap-3.5 overflow-hidden">
-            {/* Top accent line */}
-            <div
-              className="absolute top-0 left-0 right-0 h-px"
-              style={{ background: 'linear-gradient(90deg, transparent, #4f6ef7, transparent)', opacity: 0.4 }}
-            />
-
-            {/* Label */}
+            <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, #4f6ef7, transparent)', opacity: 0.4 }} />
             <div className="flex items-center gap-1.5 text-[10px] font-medium tracking-widest uppercase text-[#6b7280]">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#4f6ef7" strokeWidth="2" className="w-3.5 h-3.5 flex-shrink-0">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-              Question Prompt
-              <span className="w-1 h-1 rounded-full bg-[#4f6ef7] ml-1 animate-pulse" />
+               Voice Content Analysis Active
             </div>
-
-            {/* Question text */}
             <AnimatePresence mode="wait">
-              <motion.p
-                key={currentQuestionIndex}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.3, ease: 'easeOut' }}
-                className="text-[17px] font-normal leading-relaxed text-[#e8eaf0] italic tracking-tight"
-              >
+              <motion.p key={currentQuestionIndex} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[17px] font-normal leading-relaxed italic">
                 "{QUESTIONS[currentQuestionIndex]}"
               </motion.p>
             </AnimatePresence>
-
-            {/* Footer */}
             <div className="flex items-center justify-between">
               <QuestionSteps total={QUESTIONS.length} current={currentQuestionIndex} />
-              <button
-                onClick={handleNextQuestion}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-[#4f6ef7] hover:bg-[#3d5ce0] text-white text-[12px] font-medium rounded-lg transition-all duration-200 hover:-translate-y-px active:scale-[0.97]"
-              >
+              <button onClick={handleNextQuestion} className="flex items-center gap-1.5 px-4 py-2.5 bg-[#4f6ef7] text-white text-[12px] font-medium rounded-lg">
                 {currentQuestionIndex === QUESTIONS.length - 1 ? 'End session' : 'Next inquiry'}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
               </button>
             </div>
           </div>
 
-          {/* Camera panel */}
+          {/* Camera + Live Transcript HUD */}
           <div className="relative bg-[#10131a] border border-white/5 rounded-2xl overflow-hidden min-h-0">
+            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+            
+            {/* Live Transcript Bubble */}
+            <AnimatePresence>
+              {transcript && (
+                <motion.div 
+                   initial={{ opacity: 0, y: 10 }}
+                   animate={{ opacity: 1, y: 0 }}
+                   className="absolute bottom-6 left-6 right-6 z-40 bg-black/60 backdrop-blur-3xl border border-white/10 rounded-2xl p-5 shadow-2xl max-h-[100px] overflow-y-auto"
+                >
+                   <div className="flex items-center gap-2 mb-2">
+                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                     <span className="text-[10px] font-black uppercase tracking-widest text-[#6b7280]">Voice Intelligence Processing</span>
+                   </div>
+                   <p className="text-[13px] leading-relaxed text-[#e8eaf0] italic font-medium">"{transcript.length > 150 ? '...' + transcript.slice(-150) : transcript}"</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            {/* REC badge */}
-            <div className="absolute top-3.5 left-3.5 z-10 flex items-center gap-1.5 bg-black/70 backdrop-blur-xl border border-white/5 rounded-full px-2.5 py-1.5 text-[10px] font-medium text-[#f87171] tracking-widest uppercase">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#f87171] animate-pulse" />
-              REC · Analysis active
-            </div>
-
-            {/* Scan line */}
-            <div
-              className="absolute left-0 right-0 h-px z-20 pointer-events-none"
-              style={{
-                background: 'linear-gradient(90deg, transparent, #4f6ef7, transparent)',
-                opacity: 0.35,
-                animation: 'scan 5s linear infinite',
-              }}
-            />
-
-            {/* Camera feed */}
-            {!camReady && (
-              <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-[#0d0f16]">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="1.2" className="w-12 h-12">
-                  <path d="M23 7l-7 5 7 5V7z" />
-                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                </svg>
-                <p className="text-[12px] text-[#6b7280] tracking-wide">Camera feed · Awaiting permission</p>
-              </div>
-            )}
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className={`w-full h-full object-cover transition-opacity duration-700 ${camReady ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
-              style={{ transform: 'scaleX(-1)' }}
-            />
-
-            {/* Anxiety alert */}
             <AnimatePresence>
               {anxietyAlert && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 8 }}
-                  transition={{ duration: 0.3 }}
-                  className="absolute bottom-3.5 left-3.5 right-3.5 z-30 bg-black/80 backdrop-blur-xl border border-[#4f6ef7]/25 rounded-xl p-3.5 flex items-center gap-3"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-[#4f6ef7]/12 flex items-center justify-center flex-shrink-0">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#4f6ef7" strokeWidth="2" className="w-4 h-4">
-                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold text-[#e8eaf0] uppercase tracking-widest">Performance note</p>
-                    <p className="text-[12px] text-[#6b7280] italic mt-0.5">{anxietyAlert}</p>
-                  </div>
+                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
+                   className="absolute top-16 left-3.5 right-3.5 z-30 bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl p-3.5 flex items-center gap-3">
+                  <p className="text-[12px] text-[#6b7280] italic">{anxietyAlert}</p>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
         </div>
 
-        {/* ── Metrics panel ── */}
+        {/* Metrics panel */}
         <div className="bg-[#10131a] border border-white/5 rounded-2xl p-5 flex flex-col overflow-y-auto">
-
-          {/* Panel header */}
-          <div className="flex items-center gap-2 pb-4 border-b border-white/5 mb-4 flex-shrink-0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#4f6ef7" strokeWidth="2" className="w-3.5 h-3.5">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-            </svg>
-            <span className="text-[10px] font-semibold tracking-[0.14em] uppercase text-[#6b7280]">
-              Live insights
-            </span>
-          </div>
-
-          {/* Metric rows */}
           <div className="flex-1">
             {METRICS_CONFIG.map(cfg => (
               <MetricItem key={cfg.id} config={cfg} value={metrics[cfg.id]} />
             ))}
           </div>
-
-          {/* Composure card */}
-          <div className="mt-4 p-3.5 bg-[#161920] border border-white/5 rounded-xl flex items-center justify-between flex-shrink-0">
-            <div>
-              <div className="text-[10px] font-medium text-[#6b7280] uppercase tracking-widest mb-1">Composure</div>
-              <div className={`text-lg font-semibold tracking-tight ${stressCfg.textClass}`}>
-                {metrics.Stress_Level}
-              </div>
-            </div>
-            <ComposureBadge level={metrics.Stress_Level} />
-          </div>
-
-          {/* Session info */}
-          <div className="mt-4 flex items-center justify-between flex-shrink-0">
-            <span className="font-mono text-[10px] text-[#374151]">
-              SESSION · {formattedTime}
-            </span>
-            <span className="font-mono text-[10px] text-[#374151]">
-              {frameCount} FRAMES
-            </span>
+          <div className="mt-4 p-3.5 bg-[#161920] border border-white/5 rounded-xl flex items-center justify-between">
+            <div className="text-[10px] font-medium text-[#6b7280] uppercase tracking-widest mb-1">Composure</div>
+            <div className={`text-lg font-semibold ${stressCfg.textClass}`}>{metrics.Stress_Level}</div>
           </div>
         </div>
-
       </div>
-
-      {/* Scan line keyframes */}
-      <style>{`
-        @keyframes scan {
-          0%   { top: 0%; }
-          100% { top: 100%; }
-        }
-      `}</style>
     </div>
   );
 }
