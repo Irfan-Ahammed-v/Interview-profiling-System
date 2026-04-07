@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Activity, Brain, ShieldCheck, AlertTriangle, UserCheck, MessageSquare, ChevronRight } from 'lucide-react';
+import { Camera, Activity, Brain, ShieldCheck, AlertTriangle, UserCheck, MessageSquare, ChevronRight, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 
@@ -18,13 +18,20 @@ export default function InterviewRoom({ userData }) {
     Stress_Level: "Low",
     Honesty_Score: "0%",
     Communication: "0%",
+    Posture_Score: "0%"
   });
   
   const [anxietyAlert, setAnxietyAlert] = useState("");
   const [isConnected, setIsConnected] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   
-  const [sessionTotals, setSessionTotals] = useState({ confidence: [], honesty: [], communication: [], stress: [] });
+  const [sessionTotals, setSessionTotals] = useState({ 
+    confidence: [], 
+    honesty: [], 
+    communication: [], 
+    stress: [],
+    posture: []
+  });
   
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -87,7 +94,8 @@ export default function InterviewRoom({ userData }) {
             confidence: [...prev.confidence, parseInt(data.metrics.Confidence)],
             honesty: [...prev.honesty, parseInt(data.metrics.Honesty_Score)],
             communication: [...prev.communication, parseInt(data.metrics.Communication)],
-            stress: [...prev.stress, data.metrics.Stress_Level]
+            stress: [...prev.stress, data.metrics.Stress_Level],
+            posture: [...prev.posture, parseInt(data.metrics.Posture_Score)]
           }));
         }
         
@@ -125,6 +133,7 @@ export default function InterviewRoom({ userData }) {
         avgConfidence: avg(sessionTotals.confidence),
         avgHonesty: avg(sessionTotals.honesty),
         avgCommunication: avg(sessionTotals.communication),
+        avgPosture: avg(sessionTotals.posture),
         overallStress: dominantStress
       };
 
@@ -225,7 +234,7 @@ export default function InterviewRoom({ userData }) {
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-white/90 tracking-tight uppercase">Performance Note</h3>
-                    <p className="text-slate-400 font-medium text-sm mt-1 leading-relaxed italic">"Reduced composure detected. Maintain consistent focus and slow articulation."</p>
+                    <p className="text-slate-400 font-medium text-sm mt-1 leading-relaxed italic">"{anxietyAlert}"</p>
                   </div>
                 </motion.div>
               )}
@@ -235,18 +244,18 @@ export default function InterviewRoom({ userData }) {
 
         {/* Right 1/4: Analysis HUD */}
         <div className="flex flex-col gap-8 h-full">
-          <div className="bg-slate-900/30 rounded-[3rem] border border-white/5 p-10 flex flex-col gap-10 backdrop-blur-3xl relative overflow-hidden flex-1 shadow-2xl">
+          <div className="bg-slate-900/30 rounded-[3rem] border border-white/5 p-10 flex flex-col gap-6 backdrop-blur-3xl relative overflow-hidden flex-1 shadow-2xl overflow-y-auto">
             <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 blur-[120px]"></div>
             
-            <div className="flex items-center gap-3 border-b border-white/5 pb-8">
+            <div className="flex items-center gap-3 border-b border-white/5 pb-6">
               <Activity size={18} className="text-indigo-400" />
               <h2 className="text-[10px] font-black tracking-[0.4em] uppercase text-slate-500">Live Insights</h2>
             </div>
 
-            <div className="space-y-10 flex-1 flex flex-col justify-center">
+            <div className="space-y-7 flex-1 flex flex-col">
               <MetricHUDItem 
                 label="Authenticity" 
-                subtext="Consistency & head positioning"
+                subtext="Consistency & alignment"
                 value={metrics.Honesty_Score} 
                 icon={<ShieldCheck size={18} />} 
                 color="#6366f1"
@@ -254,7 +263,7 @@ export default function InterviewRoom({ userData }) {
               
               <MetricHUDItem 
                 label="Confidence Level" 
-                subtext="Postural stability & assurance"
+                subtext="Self-assurance metrics"
                 value={metrics.Confidence} 
                 icon={<UserCheck size={18} />} 
                 color="#10b981"
@@ -262,15 +271,23 @@ export default function InterviewRoom({ userData }) {
 
               <MetricHUDItem 
                 label="Speaking Clarity" 
-                subtext="Verbal articulation rhythm"
+                subtext="Verbal rhythm analysis"
                 value={metrics.Communication} 
                 icon={<Brain size={18} />} 
                 color="#818cf8"
               />
 
-              <div className="pt-6 mt-auto">
-                <div className={`rounded-[2rem] p-7 transition-all duration-700 border bg-slate-950/40
-                  ${metrics.Stress_Level === 'High' ? 'border-red-500/20 shadow-[inset_0_0_20px_rgba(239,68,68,0.05)]' : 
+              <MetricHUDItem 
+                label="Posture & Stability" 
+                subtext="Shoulder & spinal alignment"
+                value={metrics.Posture_Score} 
+                icon={<User size={18} />} 
+                color="#f472b6"
+              />
+
+              <div className="pt-4 mt-auto">
+                <div className={`rounded-[2rem] p-6 transition-all duration-700 border bg-slate-950/40
+                  ${metrics.Stress_Level === 'High' ? 'border-red-500/20' : 
                     metrics.Stress_Level === 'Medium' ? 'border-orange-500/20' : 
                     'border-emerald-500/20'}
                 `}>
@@ -283,8 +300,8 @@ export default function InterviewRoom({ userData }) {
                           'text-emerald-500'}
                       `}>{metrics.Stress_Level}</span>
                     </div>
-                    <div className={`p-2.5 rounded-full bg-slate-900 border border-white/5 shadow-lg
-                      ${metrics.Stress_Level === 'High' ? 'text-red-500 animate-pulse' : 
+                    <div className={`p-2.5 rounded-full bg-slate-900 border border-white/5
+                      ${metrics.Stress_Level === 'High' ? 'text-red-500' : 
                         metrics.Stress_Level === 'Medium' ? 'text-orange-400' : 
                         'text-emerald-500'}
                     `}>
@@ -313,18 +330,18 @@ export default function InterviewRoom({ userData }) {
 function MetricHUDItem({ label, subtext, value, icon, color }) {
   const numValue = parseInt(value) || 0;
   return (
-    <div className="flex flex-col gap-4 group">
+    <div className="flex flex-col gap-3 group">
       <div className="flex justify-between items-end">
         <div className="flex items-center gap-4">
-          <div className="p-3 rounded-2xl bg-slate-950/60 text-slate-500 border border-white/5 group-hover:text-white transition-colors duration-500">
+          <div className="p-2.5 rounded-xl bg-slate-950/60 text-slate-500 border border-white/5 group-hover:text-white transition-colors duration-500">
             {icon}
           </div>
           <div className="flex flex-col">
             <span className="text-xs font-bold text-slate-300 tracking-tight">{label}</span>
-            <span className="text-[10px] font-medium text-slate-600 mt-0.5 leading-tight">{subtext}</span>
+            <span className="text-[9px] font-medium text-slate-600 mt-0.5 leading-tight">{subtext}</span>
           </div>
         </div>
-        <span className="text-3xl font-black italic tracking-tighter" style={{ color }}>{value}</span>
+        <span className="text-2xl font-black italic tracking-tighter" style={{ color }}>{value}</span>
       </div>
       <div className="h-[2px] bg-slate-950 rounded-full overflow-hidden">
         <motion.div 
