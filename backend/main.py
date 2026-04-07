@@ -18,12 +18,6 @@ except ImportError as e:
     ML_AVAILABLE = False
     print(f"Warning: ML packages missing ({e}). Run: pip install mediapipe opencv-python")
 
-try:
-    from textblob import TextBlob
-    NLP_AVAILABLE = True
-except ImportError:
-    NLP_AVAILABLE = False
-
 app = FastAPI(title="NeuroHire AI Backend")
 
 app.add_middleware(
@@ -37,21 +31,21 @@ app.add_middleware(
 class FusionEngine:
     def __init__(self):
         if ML_AVAILABLE:
-            # 1. Face Landmarker
+            # 1. Face Landmarker (Real-Time)
             self.face_task_path = os.path.join(os.path.dirname(__file__), 'face_landmarker.task')
             if not os.path.exists(self.face_task_path):
                 print("[*] Downloading Face Landmarker...")
                 url = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
                 urllib.request.urlretrieve(url, self.face_task_path)
 
-            # 2. Pose Landmarker
+            # 2. Pose Landmarker (Sampling Mode)
             self.pose_task_path = os.path.join(os.path.dirname(__file__), 'pose_landmarker.task')
             if not os.path.exists(self.pose_task_path):
                 print("[*] Downloading Pose Landmarker...")
                 url = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
                 urllib.request.urlretrieve(url, self.pose_task_path)
 
-            # Initializing Detectors
+            # Detectors
             self.face_detector = vision.FaceLandmarker.create_from_options(
                 vision.FaceLandmarkerOptions(base_options=python.BaseOptions(model_asset_path=self.face_task_path), num_faces=1)
             )
@@ -66,19 +60,9 @@ class FusionEngine:
             'nose': deque(maxlen=8)
         }
         
-        # State
         self.frame_counter = 0
         self.last_posture_penalty = 0
         self.is_slouching = False
-        self.linguistic_sentiment = 1.0 # Default positive/neutral
-        self.wpm = 130 # Default ideal wpm
-
-    def update_nlp(self, text: str, wpm: int):
-        """Update the linguistic state based on incoming transcripts."""
-        if NLP_AVAILABLE and text:
-            blob = TextBlob(text)
-            self.linguistic_sentiment = (blob.sentiment.polarity + 1.0) / 2.0 # Scale -1..1 to 0..1
-        self.wpm = wpm
 
     def _euclidean_dist(self, p1, p2):
          return math.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2)
@@ -135,7 +119,7 @@ class FusionEngine:
                 if len(self.history['nose']) >= 5:
                     nose_pts = list(self.history['nose'])
                     fidget_travel = sum(self._euclidean_dist(nose_pts[i], nose_pts[i-1]) for i in range(1, len(nose_pts)))
-                    if fidget_travel > 0.10: stress_score += 35
+                    if fidget_travel > 0.10: stress_score += 45
 
                 # Yaw / Honesty
                 dist_left = self._euclidean_dist(nose, landmarks[33])
@@ -152,24 +136,12 @@ class FusionEngine:
                 if len(self.history['ear']) == 8:
                     if np.std(self.history['ear']) > 0.025: stress_score += 40 
 
-                # Articulation (MAR) Mapping
+                # Articulation (MAR)
                 mar = self._euclidean_dist(landmarks[13], landmarks[14])
                 self.history['mar'].append(mar)
-                visual_comm_base = 35
                 if len(self.history['mar']) == 8:
                     mv = np.std(self.history['mar'])
-                    visual_comm_base = 95 if mv > 0.012 else 75 if mv > 0.005 else 35
-
-                # --- 3. COMMUNICATION FUSION (Visual + Fluency + Sentiment) ---
-                # WPM Factor: 120-160 is 100%. Deviations drop the score.
-                wpm_penalty = abs(140 - self.wpm) / 140 if self.wpm > 0 else 0.5
-                fluency_score = 100 * (1.0 - min(1.0, wpm_penalty))
-                
-                # Sentiment Factor
-                sentiment_score = self.linguistic_sentiment * 100
-                
-                # Weighted Blend: 30% Visual, 40% Fluency, 30% Sentiment
-                communication_score = (visual_comm_base * 0.3) + (fluency_score * 0.4) + (sentiment_score * 0.3)
+                    communication_score = 95 if mv > 0.012 else 75 if mv > 0.005 else 35
 
             else:
                 honesty_score, confidence_score, communication_score = 10, 20, 20
@@ -205,7 +177,7 @@ fusion_engine = FusionEngine()
 @app.websocket("/ws/interview")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("[*] Dashboard connection established. NLP Engine Active.")
+    print("[*] Dashboard connection established. Geometric Matrix Active.")
     try:
         while True:
             raw_data = await websocket.receive_text()
@@ -214,9 +186,6 @@ async def websocket_endpoint(websocket: WebSocket):
             if data.get('type') == 'frame':
                 results = fusion_engine.process_frame(data.get('image'))
                 await websocket.send_text(json.dumps(results))
-            elif data.get('type') == 'text':
-                # Handle linguistic update
-                fusion_engine.update_nlp(data.get('transcript', ''), data.get('wpm', 140))
             
     except WebSocketDisconnect:
         print("[!] Client disconnected.")

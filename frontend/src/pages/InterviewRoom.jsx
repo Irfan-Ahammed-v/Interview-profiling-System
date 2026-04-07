@@ -168,26 +168,19 @@ export default function InterviewRoom({ userData }) {
   const [frameCount, setFrameCount]           = useState(0);
   const [camReady, setCamReady]               = useState(false);
 
-  // New Voice States
-  const [transcript, setTranscript] = useState('');
-  const [totalWordCount, setTotalWordCount] = useState(0);
-  const [currentWpm, setCurrentWpm] = useState(0);
-
   const [sessionTotals, setSessionTotals] = useState({
-    confidence: [], honesty: [], communication: [], stress: [], posture: [], wpm: []
+    confidence: [], honesty: [], communication: [], stress: [], posture: [],
   });
 
   const videoRef  = useRef(null);
   const streamRef = useRef(null);
   const canvasRef = useRef(document.createElement('canvas'));
-  const wsRef     = useRef(null);
-  const recognitionRef = useRef(null);
 
   /* ── Camera ── */
   useEffect(() => {
     async function setupCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.onloadedmetadata = () => {
@@ -198,7 +191,7 @@ export default function InterviewRoom({ userData }) {
         }
         streamRef.current = stream;
       } catch (err) {
-        console.warn('Camera/Audio access denied:', err);
+        console.warn('Camera access denied:', err);
       }
     }
     setupCamera();
@@ -208,7 +201,6 @@ export default function InterviewRoom({ userData }) {
   /* ── WebSocket ── */
   useEffect(() => {
     const ws = new WebSocket('ws://localhost:8000/ws/interview');
-    wsRef.current = ws;
 
     ws.onopen = () => {
       setIsConnected(true);
@@ -235,7 +227,6 @@ export default function InterviewRoom({ userData }) {
             communication: [...prev.communication, parseInt(data.metrics.Communication)],
             stress:        [...prev.stress,        data.metrics.Stress_Level],
             posture:       [...prev.posture,       parseInt(data.metrics.Posture_Score)],
-            wpm:           [...prev.wpm,           currentWpm]
           }));
         }
         if (data.anxiety_flag) {
@@ -249,52 +240,7 @@ export default function InterviewRoom({ userData }) {
 
     ws.onclose = () => setIsConnected(false);
     return () => ws.close();
-  }, [currentWpm]);
-
-  /* ── Speech Recognition ── */
-  useEffect(() => {
-    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRec) {
-      const rec = new SpeechRec();
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = 'en-US';
-
-      rec.onresult = (event) => {
-        let currentTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          currentTranscript += event.results[i][0].transcript;
-        }
-        setTranscript(currentTranscript);
-        
-        // Calculate WPM
-        const words = currentTranscript.trim().split(/\s+/).length;
-        setTotalWordCount(words);
-        const minutes = sessionSeconds / 60;
-        if (minutes > 0) {
-          const wpm = Math.round(words / minutes);
-          setCurrentWpm(wpm);
-          
-          // Send to backend
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-             wsRef.current.send(JSON.stringify({ 
-                type: 'text', 
-                transcript: currentTranscript, 
-                wpm: wpm 
-             }));
-          }
-        }
-      };
-
-      rec.onerror = (err) => console.warn('Speech Rec Error:', err);
-      rec.onend = () => rec.start(); // Keep listening
-
-      rec.start();
-      recognitionRef.current = rec;
-    }
-
-    return () => recognitionRef.current?.stop();
-  }, [sessionSeconds]);
+  }, []);
 
   /* ── Session timer ── */
   useEffect(() => {
@@ -330,14 +276,12 @@ export default function InterviewRoom({ userData }) {
             avgHonesty:       avg(sessionTotals.honesty),
             avgCommunication: avg(sessionTotals.communication),
             avgPosture:       avg(sessionTotals.posture),
-            avgWpm:           avg(sessionTotals.wpm),
             overallStress:    dominantStress,
-            fullTranscript:   transcript
           },
         },
       });
     }
-  }, [currentQuestionIndex, sessionTotals, navigate, userData, transcript]);
+  }, [currentQuestionIndex, sessionTotals, navigate, userData]);
 
   const stressCfg = STRESS_CONFIG[metrics.Stress_Level] || STRESS_CONFIG.Low;
 
@@ -364,9 +308,6 @@ export default function InterviewRoom({ userData }) {
         </div>
 
         <div className="flex items-center gap-2.5">
-          <div className="font-mono text-[11px] text-[#6b7280] px-3 py-1.5 bg-[#161920] border border-white/5 rounded-full">
-            {currentWpm} WPM
-          </div>
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#161920] border border-white/5 rounded-full text-[11px] font-medium text-[#6b7280]">
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: isConnected ? '#34d399' : '#f87171' }} />
             {isConnected ? 'Engine synced' : 'Disconnected'}
@@ -382,11 +323,10 @@ export default function InterviewRoom({ userData }) {
         
         <div className="grid grid-rows-[auto_1fr] gap-3.5 overflow-hidden">
           
-          {/* Question panel */}
           <div className="relative bg-[#10131a] border border-white/5 rounded-2xl px-6 py-5 flex flex-col gap-3.5 overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, #4f6ef7, transparent)', opacity: 0.4 }} />
             <div className="flex items-center gap-1.5 text-[10px] font-medium tracking-widest uppercase text-[#6b7280]">
-               Voice Content Analysis Active
+               Biometric Session Active
             </div>
             <AnimatePresence mode="wait">
               <motion.p key={currentQuestionIndex} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[17px] font-normal leading-relaxed italic">
@@ -401,31 +341,12 @@ export default function InterviewRoom({ userData }) {
             </div>
           </div>
 
-          {/* Camera + Live Transcript HUD */}
           <div className="relative bg-[#10131a] border border-white/5 rounded-2xl overflow-hidden min-h-0">
             <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
-            
-            {/* Live Transcript Bubble */}
-            <AnimatePresence>
-              {transcript && (
-                <motion.div 
-                   initial={{ opacity: 0, y: 10 }}
-                   animate={{ opacity: 1, y: 0 }}
-                   className="absolute bottom-6 left-6 right-6 z-40 bg-black/60 backdrop-blur-3xl border border-white/10 rounded-2xl p-5 shadow-2xl max-h-[100px] overflow-y-auto"
-                >
-                   <div className="flex items-center gap-2 mb-2">
-                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                     <span className="text-[10px] font-black uppercase tracking-widest text-[#6b7280]">Voice Intelligence Processing</span>
-                   </div>
-                   <p className="text-[13px] leading-relaxed text-[#e8eaf0] italic font-medium">"{transcript.length > 150 ? '...' + transcript.slice(-150) : transcript}"</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             <AnimatePresence>
               {anxietyAlert && (
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
-                   className="absolute top-16 left-3.5 right-3.5 z-30 bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl p-3.5 flex items-center gap-3">
+                   className="absolute bottom-6 left-3.5 right-3.5 z-30 bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl p-3.5 flex items-center gap-3">
                   <p className="text-[12px] text-[#6b7280] italic">{anxietyAlert}</p>
                 </motion.div>
               )}
@@ -433,7 +354,6 @@ export default function InterviewRoom({ userData }) {
           </div>
         </div>
 
-        {/* Metrics panel */}
         <div className="bg-[#10131a] border border-white/5 rounded-2xl p-5 flex flex-col overflow-y-auto">
           <div className="flex-1">
             {METRICS_CONFIG.map(cfg => (
