@@ -1,163 +1,379 @@
 import React from 'react';
-import { Brain, ArrowLeft, Download, ShieldCheck, UserCheck, Activity, Award, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-export default function ReportPage() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const results = location.state?.results;
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
 
+const STRESS_COLOR = {
+  Low:    '#34d399',
+  Medium: '#fbbf24',
+  High:   '#f87171',
+};
+
+function getRecommendation(h_score, overallStress) {
+  if (h_score > 85 && overallStress === 'Low')
+    return { status: 'Strong hire',          color: '#34d399', border: 'rgba(52,211,153,0.2)',  bg: 'rgba(52,211,153,0.08)',  desc: 'Exceptional candidate. High authenticity, strong focus, and stable emotional state.' };
+  if (h_score > 70)
+    return { status: 'Consider hire',        color: '#4f6ef7', border: 'rgba(79,110,247,0.2)',  bg: 'rgba(79,110,247,0.08)',  desc: 'Solid candidate. Some minor performance variances noticed, but overall fit for the role.' };
+  if (h_score > 50)
+    return { status: 'Follow-up required',   color: '#fbbf24', border: 'rgba(251,191,36,0.2)',  bg: 'rgba(251,191,36,0.08)',  desc: 'Potential fit, but physiological data suggests low composure and inconsistent focus.' };
+  return   { status: 'Not recommended',      color: '#f87171', border: 'rgba(248,113,113,0.2)', bg: 'rgba(248,113,113,0.08)', desc: 'Low biometric resonance. Authenticity and clarity scores are below enterprise threshold.' };
+}
+
+/* ─── Sub-components ─────────────────────────────────────────────────────── */
+
+function StatCard({ label, sub, value, color, icon }) {
+  return (
+    <div style={{
+      background: '#10131a',
+      border: '0.5px solid rgba(255,255,255,0.06)',
+      borderRadius: 14,
+      padding: '20px 18px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{
+          width: 30, height: 30, borderRadius: 8,
+          background: `${color}18`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {icon(color)}
+        </div>
+        <span style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 18, fontWeight: 500,
+          color, letterSpacing: '-0.5px',
+        }}>
+          {value}
+        </span>
+      </div>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: '#e8eaf0', marginBottom: 2 }}>{label}</div>
+        <div style={{ fontSize: 10, color: '#6b7280' }}>{sub}</div>
+      </div>
+    </div>
+  );
+}
+
+function MetricRow({ label, desc, score, animate }) {
+  const pct = Math.min(parseFloat(score) || 0, 100);
+  return (
+    <div style={{
+      padding: '16px 0',
+      borderBottom: '0.5px solid rgba(255,255,255,0.05)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: '#e8eaf0', marginBottom: 3 }}>{label}</div>
+          <div style={{ fontSize: 11, color: '#374151', lineHeight: 1.5, maxWidth: 380 }}>{desc}</div>
+        </div>
+        <span style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 16, fontWeight: 500,
+          color: '#4f6ef7', flexShrink: 0,
+        }}>
+          {pct.toFixed(1)}%
+        </span>
+      </div>
+      <div style={{ height: 3, background: '#161920', borderRadius: 2, overflow: 'hidden' }}>
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 1, ease: [0.4, 0, 0.2, 1], delay: animate * 0.15 }}
+          style={{ height: '100%', background: '#4f6ef7', borderRadius: 2 }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main ───────────────────────────────────────────────────────────────── */
+
+export default function ReportPage() {
+  const navigate  = useNavigate();
+  const location  = useLocation();
+  const results   = location.state?.results;
+
+  /* No session data fallback */
   if (!results) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-8 text-center gap-10 selection:bg-indigo-500/30">
-         <h1 className="text-4xl font-black italic tracking-tighter text-indigo-500 uppercase">Authentication Required</h1>
-         <p className="text-slate-500 max-w-sm font-medium leading-relaxed">No valid session data found. Proceed to candidate registration to initialize a new assessment.</p>
-         <button 
-           onClick={() => navigate('/')}
-           className="bg-white text-slate-950 px-12 py-5 rounded-2xl font-black text-sm hover:translate-y-[-4px] hover:shadow-[0_20px_50px_rgba(99,102,241,0.2)] active:scale-95 transition-all shadow-2xl"
-         >
-           BACK TO REGISTRATION
-         </button>
+      <div style={{
+        minHeight: '100vh', background: '#0a0c10',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        gap: 20, padding: 24,
+        fontFamily: "'DM Sans', sans-serif",
+      }}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');`}</style>
+        <div style={{
+          width: 36, height: 36, background: '#4f6ef7', borderRadius: 10,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" style={{ width: 18, height: 18 }}>
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: '#e8eaf0', marginBottom: 8 }}>No session data found</div>
+          <div style={{ fontSize: 13, color: '#6b7280', maxWidth: 280, lineHeight: 1.6 }}>
+            Complete an assessment session to generate a report.
+          </div>
+        </div>
+        <button
+          onClick={() => navigate('/')}
+          style={{
+            padding: '10px 20px', background: '#4f6ef7', border: 'none',
+            borderRadius: 10, fontSize: 13, fontWeight: 500,
+            fontFamily: "'DM Sans', sans-serif", color: '#fff', cursor: 'pointer',
+          }}
+        >
+          Back to registration
+        </button>
       </div>
     );
   }
 
-  const { name, role, avgConfidence, avgHonesty, avgCommunication, avgPosture, overallStress } = results;
+  const { name, avgConfidence, avgHonesty, avgCommunication, avgPosture, overallStress } = results;
   const h_score = (parseInt(avgConfidence) + parseInt(avgHonesty) + parseInt(avgCommunication) + parseInt(avgPosture)) / 4;
+  const rec = getRecommendation(h_score, overallStress);
 
-  const getRecommendation = () => {
-    if (h_score > 85 && overallStress === "Low") return { status: "STRONG HIRE", color: "text-emerald-500", desc: "Exceptional candidate. High authenticity, strong focus, and stable emotional state." };
-    if (h_score > 70) return { status: "CONSIDER HIRE", color: "text-indigo-400", desc: "Solid candidate. Some minor performance variances noticed, but overall fit for the role." };
-    if (h_score > 50) return { status: "FOLLOW UP REQUIRED", color: "text-orange-500", desc: "Potential fit, but physiological data suggests low composure and inconsistent focus." };
-    return { status: "NOT RECOMMENDED", color: "text-red-500", desc: "Low biometric resonance. Authenticity and clarity scores are below enterprise threshold." };
-  };
-
-  const rec = getRecommendation();
+  const STATS = [
+    {
+      label: 'Confidence',   sub: 'Self-assurance signals', value: `${avgConfidence}%`,   color: '#34d399',
+      icon: c => (
+        <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" style={{ width: 14, height: 14 }}>
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+      ),
+    },
+    {
+      label: 'Authenticity', sub: 'Consistency & alignment', value: `${avgHonesty}%`,     color: '#4f6ef7',
+      icon: c => (
+        <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" style={{ width: 14, height: 14 }}>
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      ),
+    },
+    {
+      label: 'Posture',      sub: 'Spinal alignment score',  value: `${avgPosture}%`,     color: '#e879f9',
+      icon: c => (
+        <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" style={{ width: 14, height: 14 }}>
+          <circle cx="12" cy="5" r="2"/><path d="M12 7v8M9 15l-2 4M15 15l2 4M9 11H6M15 11h3"/>
+        </svg>
+      ),
+    },
+    {
+      label: 'Clarity',      sub: 'Verbal rhythm analysis',  value: `${avgCommunication}%`, color: '#fbbf24',
+      icon: c => (
+        <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" style={{ width: 14, height: 14 }}>
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      ),
+    },
+    {
+      label: 'Composure',    sub: 'Biometric state',         value: overallStress,        color: STRESS_COLOR[overallStress] || '#34d399',
+      icon: c => (
+        <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" style={{ width: 14, height: 14 }}>
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+      ),
+    },
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white font-sans flex flex-col items-center p-14 overflow-x-hidden relative selection:bg-indigo-500/30">
-      
-      {/* Background Decor */}
-      <div className="absolute top-0 w-full h-[60vh] bg-gradient-to-b from-indigo-950/20 to-transparent pointer-events-none opacity-40"></div>
+    <div
+      style={{
+        minHeight: '100vh', background: '#0a0c10',
+        fontFamily: "'DM Sans', sans-serif", color: '#e8eaf0',
+        padding: '14px', boxSizing: 'border-box',
+      }}
+    >
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&display=swap');`}</style>
 
-      <motion.div 
-        initial={{ opacity: 0, y: 40 }}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="z-10 w-full max-w-5xl space-y-12"
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+        style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}
       >
-        {/* Top Navigation */}
-        <div className="flex justify-between items-center group">
-          <button 
-             onClick={() => navigate('/')}
-             className="flex items-center gap-3 text-slate-600 hover:text-white transition-colors font-black uppercase text-[10px] tracking-widest"
-          >
-            <ArrowLeft size={16} /> New Assessment
-          </button>
-          
-          <div className="flex items-center gap-3 bg-slate-900/40 px-5 py-2.5 rounded-2xl border border-white/5 backdrop-blur-3xl shadow-xl">
-             <Brain className="text-indigo-400" size={18} />
-             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Analysis Report Issued</span>
+
+        {/* ── Header bar ── */}
+        <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 36, height: 36, background: '#4f6ef7', borderRadius: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}>
+                <path d="M12 2a6 6 0 0 1 0 12A6 6 0 0 1 12 2z"/>
+                <path d="M12 14c-5 0-9 2.2-9 5v1h18v-1c0-2.8-4-5-9-5z"/>
+                <circle cx="8" cy="8" r="1" fill="#fff" stroke="none"/>
+                <circle cx="16" cy="8" r="1" fill="#fff" stroke="none"/>
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#e8eaf0', letterSpacing: '-0.3px' }}>
+                NeuroHire <span style={{ color: '#6b7280', fontWeight: 300 }}>Assessment</span>
+              </div>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#6b7280', letterSpacing: '0.08em', marginTop: 1 }}>
+                SESSION REPORT
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={() => window.print()}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 14px',
+                background: '#161920', border: '0.5px solid rgba(255,255,255,0.1)',
+                borderRadius: 100, fontSize: 11, fontWeight: 500,
+                fontFamily: "'DM Sans', sans-serif", color: '#6b7280', cursor: 'pointer',
+                transition: 'color 0.2s',
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 13, height: 13 }}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Export
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 14px',
+                background: '#161920', border: '0.5px solid rgba(255,255,255,0.1)',
+                borderRadius: 100, fontSize: 11, fontWeight: 500,
+                fontFamily: "'DM Sans', sans-serif", color: '#6b7280', cursor: 'pointer',
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 13, height: 13 }}>
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+              New assessment
+            </button>
+          </div>
+        </header>
+
+        {/* ── Candidate + Verdict card ── */}
+        <div style={{
+          background: '#10131a',
+          border: '0.5px solid rgba(255,255,255,0.06)',
+          borderRadius: 16, padding: '24px', position: 'relative', overflow: 'hidden',
+        }}>
+          {/* Top accent */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+            background: 'linear-gradient(90deg, transparent, #4f6ef7, transparent)', opacity: 0.4,
+          }} />
+
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
+            {/* Left: candidate info */}
+            <div>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 7,
+                fontSize: 10, fontWeight: 500, letterSpacing: '0.12em',
+                textTransform: 'uppercase', color: '#6b7280', marginBottom: 10,
+              }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="#4f6ef7" strokeWidth="2" style={{ width: 13, height: 13 }}>
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                Session complete
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 600, color: '#e8eaf0', letterSpacing: '-0.5px', marginBottom: 4 }}>
+                {name}
+              </div>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#374151' }}>
+                Overall score · <span style={{ color: '#4f6ef7' }}>{h_score.toFixed(1)}%</span>
+              </div>
+            </div>
+
+            {/* Right: verdict */}
+            <div style={{
+              padding: '12px 18px',
+              background: rec.bg,
+              border: `0.5px solid ${rec.border}`,
+              borderRadius: 12, textAlign: 'right',
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 500, color: '#6b7280', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
+                Verdict
+              </div>
+              <div style={{ fontSize: 17, fontWeight: 600, color: rec.color, letterSpacing: '-0.3px', marginBottom: 6 }}>
+                {rec.status}
+              </div>
+              <div style={{ fontSize: 11, color: '#6b7280', maxWidth: 260, lineHeight: 1.6 }}>
+                {rec.desc}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Hero Header */}
-        <div className="relative group p-10 bg-slate-900/30 rounded-[3.5rem] border border-white/5 backdrop-blur-3xl overflow-hidden shadow-[0_50px_100px_rgba(0,0,0,0.4)] transition-all duration-700">
-          <div className="absolute top-0 right-0 w-[40rem] h-[40rem] bg-indigo-500/5 blur-[180px]"></div>
-          
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-12 relative z-10">
-            <div className="space-y-4">
-               <div className="flex items-center gap-4 text-indigo-400 mb-2">
-                 <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20">
-                   <Award size={26} />
-                 </div>
-                 <span className="text-[11px] font-black uppercase tracking-[0.3em]">Session Completion</span>
-               </div>
-               <h1 className="text-5xl font-black italic tracking-tighter leading-none">
-                 {name} <span className="text-slate-700">/ {role}</span>
-               </h1>
-            </div>
+        {/* ── Stat cards ── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+          gap: 10,
+        }}>
+          {STATS.map(s => <StatCard key={s.label} {...s} />)}
+        </div>
 
-            <div className="text-right">
-               <span className={`text-5xl font-black italic tracking-tighter uppercase ${rec.color}`}>
-                 {rec.status}
-               </span>
-               <p className="text-slate-500 max-w-[280px] mt-3 text-xs font-medium ml-auto leading-relaxed italic">
-                 {rec.desc}
-               </p>
-            </div>
+        {/* ── Breakdown panel ── */}
+        <div style={{
+          background: '#10131a',
+          border: '0.5px solid rgba(255,255,255,0.06)',
+          borderRadius: 16, padding: '24px', position: 'relative', overflow: 'hidden',
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            paddingBottom: 16, borderBottom: '0.5px solid rgba(255,255,255,0.05)', marginBottom: 4,
+          }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#4f6ef7" strokeWidth="2" style={{ width: 14, height: 14 }}>
+              <line x1="8" y1="6" x2="21" y2="6"/>
+              <line x1="8" y1="12" x2="21" y2="12"/>
+              <line x1="8" y1="18" x2="21" y2="18"/>
+              <line x1="3" y1="6" x2="3.01" y2="6"/>
+              <line x1="3" y1="12" x2="3.01" y2="12"/>
+              <line x1="3" y1="18" x2="3.01" y2="18"/>
+            </svg>
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280' }}>
+              Quantitative breakdown
+            </span>
           </div>
-        </div>
 
-        {/* Global Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-           <ReportStatItem label="Confidence" subtext="Postural stability" value={`${avgConfidence}%`} icon={<UserCheck />} color="text-emerald-400" bg="bg-emerald-400/10" />
-           <ReportStatItem label="Authenticity" subtext="Ocular focus" value={`${avgHonesty}%`} icon={<ShieldCheck />} color="text-indigo-400" bg="bg-indigo-400/10" />
-           <ReportStatItem label="Posture" subtext="Alignment index" value={`${avgPosture}%`} icon={<User />} color="text-pink-400" bg="bg-pink-400/10" />
-           <ReportStatItem label="Clarity" subtext="Verbal rhythm" value={`${avgCommunication}%`} icon={<Brain />} color="text-indigo-400" bg="bg-indigo-400/10" />
-           <ReportStatItem label="Composure" subtext="Biometric state" value={overallStress} icon={<Activity />} color={(overallStress === 'High') ? "text-red-500" : (overallStress === 'Medium') ? "text-orange-500" : "text-emerald-500"} bg="bg-slate-900/60" />
-        </div>
-
-        {/* Summary Breakdown */}
-        <div className="bg-slate-900/10 rounded-[3rem] border border-white/5 p-10 backdrop-blur-2xl shadow-inner relative overflow-hidden">
-           <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-500/5 blur-[120px]"></div>
-           
-           <div className="flex items-center justify-between mb-10 relative z-10">
-              <h2 className="text-lg font-black uppercase tracking-[0.3em] text-slate-500 italic">Quantitative Breakdown</h2>
-              <button 
-                onClick={() => window.print()}
-                className="flex items-center gap-3 bg-white text-slate-950 hover:bg-indigo-400 px-7 py-3.5 rounded-2xl transition-all shadow-xl text-[10px] font-black uppercase tracking-widest"
-              >
-                <Download size={18} /> Export Analysis
-              </button>
-           </div>
-
-           <div className="space-y-7 relative z-10">
-              <SummaryRow label="Biometric Consistency" score={h_score.toFixed(1)} desc="The candidate's overall physiological stability and behavioral resonance." />
-              <SummaryRow label="Postural Alignment" score={avgPosture} desc="Level of identified spinal and shoulder stability during the assessment." />
-              <SummaryRow label="Verbal Engagement" score={avgCommunication} desc="Objectively monitored articulation and verbal confidence rhythm." />
-           </div>
+          <MetricRow
+            label="Biometric consistency"
+            desc="The candidate's overall physiological stability and behavioral resonance across the session."
+            score={h_score.toFixed(1)}
+            animate={0}
+          />
+          <MetricRow
+            label="Postural alignment"
+            desc="Level of identified spinal and shoulder stability during the assessment."
+            score={avgPosture}
+            animate={1}
+          />
+          <MetricRow
+            label="Verbal engagement"
+            desc="Objectively monitored articulation and verbal confidence rhythm throughout questions."
+            score={avgCommunication}
+            animate={2}
+          />
+          <MetricRow
+            label="Authenticity index"
+            desc="Consistency between verbal responses and biometric signals over the full session."
+            score={avgHonesty}
+            animate={3}
+          />
         </div>
 
       </motion.div>
-    </div>
-  );
-}
-
-function ReportStatItem({ label, subtext, value, icon, color, bg }) {
-  return (
-    <div className="bg-slate-900/40 p-8 rounded-[2.5rem] border border-white/5 text-center flex flex-col items-center gap-5 hover:translate-y-[-4px] transition-all duration-500 hover:bg-slate-800/40 group shadow-2xl relative overflow-hidden">
-       <div className={`p-3 rounded-2xl ${bg} ${color} border border-indigo-500/10 group-hover:scale-[1.1] transition-transform duration-700`}>
-         {icon}
-       </div>
-       <div className="space-y-1.5 text-ellipsis">
-         <span className="text-[9px] font-black uppercase tracking-widest text-slate-600 block">{label}</span>
-         <h3 className={`text-3xl font-black italic tracking-tighter text-white`}>
-           {value}
-         </h3>
-         <span className="text-[8px] font-medium text-slate-700 italic block leading-none">{subtext}</span>
-       </div>
-    </div>
-  );
-}
-
-function SummaryRow({ label, score, desc }) {
-  return (
-    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-10 py-8 bg-slate-950/40 rounded-[2rem] border border-white/5 hover:border-indigo-500/20 transition-all duration-500">
-       <div className="space-y-1.5">
-          <h4 className="text-lg font-bold text-white tracking-tight">{label}</h4>
-          <p className="text-[11px] text-slate-600 font-medium max-w-sm leading-relaxed">{desc}</p>
-       </div>
-       <div className="flex items-center gap-8">
-          <div className="w-48 bg-slate-900 h-1 rounded-full overflow-hidden border border-white/5 shadow-inner">
-             <motion.div 
-               initial={{ width: 0 }}
-               animate={{ width: `${score}%` }}
-               className="h-full bg-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.5)]"
-             />
-          </div>
-          <span className="text-2xl font-black italic text-indigo-400 min-w-[70px] text-right font-mono tracking-tighter">{score}%</span>
-       </div>
     </div>
   );
 }
