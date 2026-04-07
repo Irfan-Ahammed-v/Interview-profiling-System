@@ -1,0 +1,18 @@
+# Python
+backend/venv/
+backend/__pycache__/
+*.onnx
+*.onnx.data
+*.task
+*.caffemodel
+*.pt
+
+# Node
+frontend/node_modules/
+frontend/dist/
+.vite/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
