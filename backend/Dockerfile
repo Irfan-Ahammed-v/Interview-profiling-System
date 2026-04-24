@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
     libgles2 \
+    libegl1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -16,5 +17,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the code
 COPY . .
 
-# Start command (Note: Render's $PORT environment variable is handled by Uvicorn)
+# Start command
 CMD uvicorn main:app --host 0.0.0.0 --port 8000
