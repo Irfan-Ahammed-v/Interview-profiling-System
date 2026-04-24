@@ -200,7 +200,8 @@ export default function InterviewRoom({ userData }) {
 
   /* ── WebSocket ── */
   useEffect(() => {
-    const ws = new WebSocket('ws://localhost:8000/ws/interview');
+    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/interview';
+    const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       setIsConnected(true);
